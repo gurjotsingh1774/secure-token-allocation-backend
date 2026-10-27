@@ -633,7 +633,9 @@ func StreamRequestStatus(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	if c.Writer.Header().Get("Access-Control-Allow-Origin") == "" {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	}
 
 	ch := Broker.AddClient(reqID)
 	defer Broker.RemoveClient(reqID, ch)
@@ -695,7 +697,9 @@ func StreamPublicAllocations(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	if c.Writer.Header().Get("Access-Control-Allow-Origin") == "" {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	}
 
 	ch := Broker.AddClient("public_allocations")
 	defer Broker.RemoveClient("public_allocations", ch)
@@ -746,7 +750,9 @@ func StreamAdminDashboard(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	if c.Writer.Header().Get("Access-Control-Allow-Origin") == "" {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	}
 
 	ch := Broker.AddClient("admin_dashboard")
 	defer Broker.RemoveClient("admin_dashboard", ch)
@@ -1018,6 +1024,7 @@ func AdminLogin(c *gin.Context) {
 	c.SetCookie("admin_session", sessionCookieVal, 43200, "/", "", true, true)
 
 	c.JSON(http.StatusOK, gin.H{
+		"token":           sessionCookieVal,
 		"admin_id":        admin.ID,
 		"username":        admin.Username,
 		"role":            admin.Role,
@@ -1048,8 +1055,21 @@ func AdminLogin(c *gin.Context) {
 // - Sets "admin" in gin.Context consumed by GetAdminProfile, SuperAdminMiddleware, etc.
 func AdminAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cookieVal, err := c.Cookie("admin_session")
-		if err != nil || cookieVal == "" {
+		cookieVal, _ := c.Cookie("admin_session")
+		if cookieVal == "" {
+			cookieVal = c.Query("token")
+		}
+		if cookieVal == "" {
+			cookieVal = c.Query("admin_session")
+		}
+		if cookieVal == "" {
+			authHeader := c.GetHeader("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				cookieVal = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		if cookieVal == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin authentication required. Please log in."})
 			c.Abort()
 			return
@@ -1057,6 +1077,7 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 
 		uname, cookieVer, ok := verifySession(cookieVal)
 		if !ok {
+			c.SetSameSite(http.SameSiteNoneMode)
 			c.SetCookie("admin_session", "", -1, "/", "", true, true)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session signature invalid. Please log in again."})
 			c.Abort()
@@ -1065,6 +1086,7 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 
 		var admin models.Admin
 		if err := database.DB.Where("username = ?", uname).First(&admin).Error; err != nil {
+			c.SetSameSite(http.SameSiteNoneMode)
 			c.SetCookie("admin_session", "", -1, "/", "", true, true)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin account not found"})
 			c.Abort()
@@ -1072,6 +1094,7 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 		}
 
 		if cookieVer != admin.SessionVersion {
+			c.SetSameSite(http.SameSiteNoneMode)
 			c.SetCookie("admin_session", "", -1, "/", "", true, true)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired or credentials were changed on another device."})
 			c.Abort()
