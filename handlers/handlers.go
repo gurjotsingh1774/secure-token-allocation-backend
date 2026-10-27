@@ -1014,8 +1014,8 @@ func AdminLogin(c *gin.Context) {
 
 	// Set HMAC-signed 12-hour session cookie
 	sessionCookieVal := signSession(admin.Username, admin.SessionVersion)
-	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie("admin_session", sessionCookieVal, 43200, "/", "", false, true)
+	c.SetSameSite(http.SameSiteNoneMode)
+	c.SetCookie("admin_session", sessionCookieVal, 43200, "/", "", true, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"admin_id":        admin.ID,
@@ -1057,7 +1057,7 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 
 		uname, cookieVer, ok := verifySession(cookieVal)
 		if !ok {
-			c.SetCookie("admin_session", "", -1, "/", "", false, true)
+			c.SetCookie("admin_session", "", -1, "/", "", true, true)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session signature invalid. Please log in again."})
 			c.Abort()
 			return
@@ -1065,14 +1065,14 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 
 		var admin models.Admin
 		if err := database.DB.Where("username = ?", uname).First(&admin).Error; err != nil {
-			c.SetCookie("admin_session", "", -1, "/", "", false, true)
+			c.SetCookie("admin_session", "", -1, "/", "", true, true)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin account not found"})
 			c.Abort()
 			return
 		}
 
 		if cookieVer != admin.SessionVersion {
-			c.SetCookie("admin_session", "", -1, "/", "", false, true)
+			c.SetCookie("admin_session", "", -1, "/", "", true, true)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired or credentials were changed on another device."})
 			c.Abort()
 			return
@@ -1307,7 +1307,7 @@ func ChangeAdminCredentials(c *gin.Context) {
 	// Verify signed cookie (bug #4 fix)
 	uname, _, ok := verifySession(cookieVal)
 	if !ok {
-		c.SetCookie("admin_session", "", -1, "/", "", false, true)
+		c.SetCookie("admin_session", "", -1, "/", "", true, true)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Session invalid or tampered"})
 		return
 	}
@@ -1375,8 +1375,8 @@ func ChangeAdminCredentials(c *gin.Context) {
 
 	// Set new HMAC-signed 12-hour session cookie (bug #4 fix)
 	newCookieVal := signSession(admin.Username, admin.SessionVersion)
-	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie("admin_session", newCookieVal, 43200, "/", "", false, true)
+	c.SetSameSite(http.SameSiteNoneMode)
+	c.SetCookie("admin_session", newCookieVal, 43200, "/", "", true, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":         "Credentials updated successfully! All other active device sessions have been logged out.",
@@ -1397,7 +1397,7 @@ func ChangeAdminCredentials(c *gin.Context) {
 // Interactions:
 // - Consumed by admin frontend on user logout.
 func AdminLogout(c *gin.Context) {
-	c.SetCookie("admin_session", "", -1, "/", "", false, true)
+	c.SetCookie("admin_session", "", -1, "/", "", true, true)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out"})
 }
 
