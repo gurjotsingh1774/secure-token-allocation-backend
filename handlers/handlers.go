@@ -633,9 +633,6 @@ func StreamRequestStatus(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	if c.Writer.Header().Get("Access-Control-Allow-Origin") == "" {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-	}
 
 	ch := Broker.AddClient(reqID)
 	defer Broker.RemoveClient(reqID, ch)
@@ -697,9 +694,6 @@ func StreamPublicAllocations(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	if c.Writer.Header().Get("Access-Control-Allow-Origin") == "" {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-	}
 
 	ch := Broker.AddClient("public_allocations")
 	defer Broker.RemoveClient("public_allocations", ch)
@@ -750,9 +744,6 @@ func StreamAdminDashboard(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	if c.Writer.Header().Get("Access-Control-Allow-Origin") == "" {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-	}
 
 	ch := Broker.AddClient("admin_dashboard")
 	defer Broker.RemoveClient("admin_dashboard", ch)
