@@ -104,13 +104,14 @@ func main() {
 	adm := r.Group("/api/admin")
 	{
 		adm.POST("/auth/login", handlers.AdminLogin)
+		adm.POST("/auth/logout", handlers.AdminLogout)
+		adm.GET("/auth/logout", handlers.AdminLogout)
 
 		// Protected Admin Routes requiring 12-Hour Cookie Authentication
 		protected := adm.Group("")
 		protected.Use(handlers.AdminAuthMiddleware())
 		{
 			protected.GET("/me", handlers.GetAdminProfile)
-			protected.POST("/auth/logout", handlers.AdminLogout)
 			protected.POST("/change-credentials", handlers.ChangeAdminCredentials)
 
 			protected.GET("/allocations", handlers.GetAdminAllocations)

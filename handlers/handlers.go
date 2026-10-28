@@ -1068,8 +1068,7 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 
 		uname, cookieVer, ok := verifySession(cookieVal)
 		if !ok {
-			c.SetSameSite(http.SameSiteNoneMode)
-			c.SetCookie("admin_session", "", -1, "/", "", true, true)
+			ClearAdminSessionCookies(c)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session signature invalid. Please log in again."})
 			c.Abort()
 			return
@@ -1077,16 +1076,14 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 
 		var admin models.Admin
 		if err := database.DB.Where("username = ?", uname).First(&admin).Error; err != nil {
-			c.SetSameSite(http.SameSiteNoneMode)
-			c.SetCookie("admin_session", "", -1, "/", "", true, true)
+			ClearAdminSessionCookies(c)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin account not found"})
 			c.Abort()
 			return
 		}
 
 		if cookieVer != admin.SessionVersion {
-			c.SetSameSite(http.SameSiteNoneMode)
-			c.SetCookie("admin_session", "", -1, "/", "", true, true)
+			ClearAdminSessionCookies(c)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired or credentials were changed on another device."})
 			c.Abort()
 			return
@@ -1321,7 +1318,7 @@ func ChangeAdminCredentials(c *gin.Context) {
 	// Verify signed cookie (bug #4 fix)
 	uname, _, ok := verifySession(cookieVal)
 	if !ok {
-		c.SetCookie("admin_session", "", -1, "/", "", true, true)
+		ClearAdminSessionCookies(c)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Session invalid or tampered"})
 		return
 	}
@@ -1399,11 +1396,52 @@ func ChangeAdminCredentials(c *gin.Context) {
 	})
 }
 
+// ClearAdminSessionCookies aggressively clears the admin_session cookie across all scopes (root "/" and prefix "/secure-tokens")
+// ensuring cross-site compliance with SameSite=None, Secure=true, and an expired timestamp.
+func ClearAdminSessionCookies(c *gin.Context) {
+	c.SetSameSite(http.SameSiteNoneMode)
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "admin_session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "admin_session",
+		Value:    "",
+		Path:     "/secure-tokens",
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "admin_session",
+		Value:    "",
+		Path:     "/api",
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	})
+}
+
 // AdminLogout handles POST /api/admin/auth/logout.
 //
 // Working:
-// Overwrites the "admin_session" cookie with an empty string and a negative Max-Age (-1),
-// instructing the browser to immediately delete the session cookie. Returns HTTP 200 OK.
+// 1. Attempts to identify the logged-in admin from context (if set by middleware) or parses
+//    the session cookie / bearer token directly from request.
+// 2. Increments admin.SessionVersion in PostgreSQL, which immediately and permanently invalidates
+//    all existing session tokens for this admin on the server side.
+// 3. Emits cross-site deletion cookies (SameSite=None, Secure=true, MaxAge=-1, expired Unix time)
+//    across root and prefix paths so the browser completely purges the cookie from its jar.
+// 4. Returns HTTP 200 OK {"message": "Logged out"}.
 //
 // Parameters:
 // - c: Gin request context.
@@ -1411,7 +1449,38 @@ func ChangeAdminCredentials(c *gin.Context) {
 // Interactions:
 // - Consumed by admin frontend on user logout.
 func AdminLogout(c *gin.Context) {
-	c.SetCookie("admin_session", "", -1, "/", "", true, true)
+	var uname string
+	if val, exists := c.Get("admin"); exists {
+		if admin, ok := val.(models.Admin); ok {
+			uname = admin.Username
+		}
+	}
+	if uname == "" {
+		cookieVal, _ := c.Cookie("admin_session")
+		if cookieVal == "" {
+			cookieVal = c.Query("token")
+		}
+		if cookieVal == "" {
+			cookieVal = c.Query("admin_session")
+		}
+		if cookieVal == "" {
+			authHeader := c.GetHeader("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				cookieVal = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+		if cookieVal != "" {
+			if u, _, ok := verifySession(cookieVal); ok {
+				uname = u
+			}
+		}
+	}
+
+	if uname != "" {
+		database.DB.Model(&models.Admin{}).Where("username = ?", uname).Update("session_version", gorm.Expr("session_version + 1"))
+	}
+
+	ClearAdminSessionCookies(c)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out"})
 }
 
